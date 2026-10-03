@@ -1,153 +1,129 @@
 # PinterestNoAdsDylib
 
-An Objective-C runtime filter and reproducible Mach-O injection tool for
-authorized, private research on Pinterest for iOS 14.38 (build 2).
+A focused runtime filter for Pinterest on iOS 14.38. It removes promoted and
+sponsored models before they enter the app's feed collection.
 
-This repository contains **only original filter/injector source, tests, and
-build scripts**. It intentionally does not contain a prebuilt dylib, Pinterest
-`.app`, `.ipa`, executable, framework, extension, resource, account material,
-or decrypted analysis dump. You must build the dylib yourself and supply your
-own lawfully obtained and decrypted app locally.
+The repository includes the filter source, a small Mach-O injector, a local
+packaging script, and the full host-side test suite. Build the dylib locally and
+package it with your own decrypted app bundle.
 
-Pinterest is a trademark of Pinterest, Inc. This project is independent and
-is not affiliated with, endorsed by, or distributed by Pinterest.
+## What it does
 
-## How it works
-
-The dylib hooks this Objective-C-visible Pinterest 14.38 boundary:
+The dylib hooks this Pinterest model-loading boundary:
 
 ```text
 -[PINRemoteModelCollection
   requestManager:didLoadObjects:withAction:andCompletion:]
 ```
 
-Before Pinterest mutates its remote model collection, the hook removes any
-incoming model whose `isPromoted` or `isSponsored` Boolean getter is true. It
-preserves the surviving objects' identity and order, forwards the original
-request manager, signed action value, and completion object, and enables
-Pinterest's own `continuesPaginationAfterObjectsRemoved` setting after a
-removal.
+For each incoming batch, it:
 
-The filter does not depend on advertiser names or visible label text. It does
-not falsify the ad flags, patch network responses, delete measurement SDKs, or
-modify Pinterest's executable code section.
+- removes models where `isPromoted` or `isSponsored` is true;
+- preserves the order and identity of every remaining model;
+- forwards the original request manager, action, and completion object;
+- keeps pagination enabled after removing items; and
+- calls Pinterest's original collection handler exactly once.
 
-The distributed release does not automatically enumerate app metadata or
-write diagnostic inventory files. The exported `PIBProbeWriteInventory`
-function remains available for an explicit, user-initiated diagnostic build.
-Defining `PIB_ENABLE_METADATA_AUTOSTART` at compile time enables the legacy
-5-second and 30-second cache snapshots; the supplied build scripts do not set
-that macro.
+The filter works at the model layer. It does not rely on advertiser names,
+visible labels, DNS rules, or renderer-specific hiding.
 
-## Compatibility
+## Supported build
 
-The packager deliberately fails closed unless the local input matches:
+| Property | Required value |
+| --- | --- |
+| App | Pinterest for iOS |
+| Version | 14.38 |
+| Build | 2 |
+| Bundle identifier | `pinterest` |
+| Architecture | thin arm64 |
+| Main UUID | `8DDF19C3-6AEC-33DF-ADDF-3BF468B29451` |
+| Mach-O components | 29, all `cryptid=0` |
 
-- Bundle identifier: `pinterest`
-- Version: `14.38`
-- Build: `2`
-- Main executable: thin arm64 `Pinterest`
-- Main UUID: `8DDF19C3-6AEC-33DF-ADDF-3BF468B29451`
-- Original Mach-O inventory: exactly 29 components, all `cryptid=0`
-- No `SC_Info` directories
-
-Other Pinterest releases need fresh static and runtime analysis. Do not remove
-these guards merely to force another version through the packager.
+The packager checks these values before it creates any output. A different app
+version needs a fresh method/ABI check rather than bypassing the guards.
 
 ## Requirements
 
 - Apple-silicon Mac
-- Xcode command-line tools with an iOS SDK
-- A user-supplied, decrypted Pinterest 14.38 app bundle
-- A user-supplied entitlement-reference app bundle from the same version and
-  environment
-- An authorized test environment that accepts the resulting signature
+- Xcode command-line tools and an iOS SDK
+- A decrypted Pinterest 14.38 `.app`
+- An entitlement-reference `.app` from the same version and environment
+- A test device or virtualized iOS environment that accepts the resulting
+  signature
 
-No Pinterest account credentials are read, stored, or transmitted by these
-tools.
-
-## Test
+## Run the tests
 
 ```sh
 zsh build.sh test
 ```
 
-The test suite exercises:
+The suite covers:
 
 - exact Objective-C getter and callback ABIs;
-- promoted and sponsored removal;
-- mixed, organic-only, all-ad, empty, and `nil` pages;
-- manager, action, completion, ordering, and pagination behavior;
-- repeated and concurrent hook installation;
-- metadata collection without invoking model getters;
+- promoted, sponsored, organic-only, all-ad, empty, and `nil` batches;
+- argument forwarding, ordering, and pagination behavior;
+- repeated, concurrent, and conflicting hook installation;
+- filter-only release behavior;
 - idempotent load-command injection with unchanged `__text`;
-- rejection of unsafe, malformed, wrong-architecture, and no-padding Mach-O
-  inputs; and
-- package preflight before output creation.
+- malformed, universal, encrypted, wrong-architecture, and no-padding Mach-O
+  rejection; and
+- package and public-tree preflight checks.
 
-## Build the iOS dylib
+## Build the dylib
 
 ```sh
 zsh build.sh ios
 ```
 
-The result is `build/libPinterestProbe.dylib`. The repository intentionally
-does not track this generated binary. Build and verify it locally from source.
+Output:
 
-## Build a local test app
+```text
+build/libPinterestProbe.dylib
+```
 
-Keep both app bundles outside this Git repository, then run:
+The release build automatically installs only the ad filter. The optional
+`PIBProbeWriteInventory` export remains available for manual runtime inspection.
+
+## Package a local app
+
+Keep the input bundles outside this repository, then run:
 
 ```sh
 zsh package_noads.sh \
   /absolute/path/to/decrypted/Pinterest.app \
-  /absolute/path/to/your/entitlement-reference/Pinterest.app \
+  /absolute/path/to/entitlement-reference/Pinterest.app \
   /absolute/path/to/output-directory
 ```
 
-The script:
+The script validates the target, copies it, embeds the dylib, inserts one load
+command, signs every nested component in order, verifies the final app, and
+creates:
 
-1. validates identity, UUID, architecture, decryption state, and component
-   count before creating output;
-2. copies the input app;
-3. embeds `libPinterestProbe.dylib`;
-4. inserts exactly one
-   `@executable_path/Frameworks/libPinterestProbe.dylib` load command;
-5. signs nested components inside-out;
-6. requires, reapplies, reads back, and compares app/extension entitlements;
-7. verifies the complete app signature; and
-8. creates a local `Pinterest-14.38-noads.ipa` outside the repository.
+```text
+Pinterest-14.38-noads.ipa
+```
 
-The generated app and IPA are intentionally ignored and blocked by the public
-tree audit. Do not open a pull request containing either one.
+## Project layout
 
-## Verification boundary
-
-Passing the host tests, signature check, and packaging checks does not prove:
-
-- successful installation or launch on a particular device;
-- coverage of server experiments or nested ad containers without either
-  classification getter;
-- pagination behavior against real production responses;
-- login, push, keychain, associated-domain, or app-group compatibility; or
-- suppression of measurement performed before the collection callback.
-
-Validate those layers only on an environment you own or are authorized to
-test, and report them separately from host-side results.
+```text
+src/PinterestProbe.m             runtime filter and optional probe
+tools/macho_inject.c             thin-arm64 load-command injector
+tools/validate_macho.sh          architecture and decryption validator
+package_noads.sh                 local app packaging and signing
+tests/                           host, ABI, injector, and safety tests
+scripts/check_public_tree.sh     source-tree audit
+```
 
 ## Public-tree audit
-
-Before committing or publishing:
 
 ```sh
 zsh scripts/check_public_tree.sh
 ```
 
-The audit rejects app packages, extracted bundles, all tracked Mach-O files,
-large artifacts, local paths, signing material, and common credential formats.
+The audit keeps generated apps, IPAs, binaries, local paths, credentials, and
+signing material out of Git history.
 
 ## License
 
-Original code in this repository is available under the MIT License. This
-license does not grant rights to Pinterest software, trademarks, services, or
-content.
+MIT. Independent project; not affiliated with Pinterest. Pinterest binaries are
+not included.
