@@ -32,6 +32,8 @@ plist_value() {
 [[ -x "$injector" ]] || die 'build the injector first'
 [[ -x "$validator" ]] || die 'Mach-O validator is missing'
 [[ ! -e "$output_root" ]] || die 'output root already exists'
+"$validator" "$filter_dylib" ||
+  die 'filter dylib has unsupported architecture or encryption metadata'
 
 for app in "$input_app" "$reference_app"; do
   [[ "$(plist_value "$app" CFBundleIdentifier)" == pinterest ]] ||
@@ -45,7 +47,8 @@ for app in "$input_app" "$reference_app"; do
 done
 
 main="$input_app/Pinterest"
-"$validator" "$main" || die 'input main executable is not clear thin arm64'
+"$validator" "$main" ||
+  die 'input main executable lacks supported clear arm64/arm64e slices'
 uuid=$(otool -l "$main" |
   awk '/LC_UUID/{p=1;next} p && $1=="uuid" && !found {print $2;found=1;p=0}')
 [[ "$uuid" == '8DDF19C3-6AEC-33DF-ADDF-3BF468B29451' ]] ||
@@ -58,7 +61,7 @@ for candidate in "$input_app"/**/*(.N); do
   if file "$candidate" | grep -q 'Mach-O'; then
     (( macho_count += 1 ))
     "$validator" "$candidate" ||
-      die "encrypted, universal, or unverifiable Mach-O: ${candidate#$input_app/}"
+      die "encrypted, unsupported-architecture, or unverifiable Mach-O: ${candidate#$input_app/}"
   fi
 done
 [[ "$macho_count" == 29 ]] ||
@@ -68,6 +71,17 @@ mkdir -p "$output_root/Payload"
 ditto "$input_app" "$output_app"
 cp "$filter_dylib" "$output_app/Frameworks/libPinterestProbe.dylib"
 "$injector" "$output_app/Pinterest" "$load_path"
+
+output_macho_count=0
+for candidate in "$output_app"/**/*(.N); do
+  if file "$candidate" | grep -q 'Mach-O'; then
+    (( output_macho_count += 1 ))
+    "$validator" "$candidate" ||
+      die "invalid packaged Mach-O: ${candidate#$output_app/}"
+  fi
+done
+[[ "$output_macho_count" == 30 ]] ||
+  die "expected 30 packaged Mach-O components, found $output_macho_count"
 
 signing_tmp=$(mktemp -d)
 trap 'rm -rf "$signing_tmp"' EXIT
@@ -120,4 +134,5 @@ codesign --verify --deep --strict --verbose=2 "$output_app"
   ditto -c -k --sequesterRsrc --keepParent Payload "$output_ipa"
 )
 unzip -tq "$output_ipa"
+print -u2 'Candidate built. Runtime install, launch survival, logs, feed, and pagination still require target validation.'
 print "$output_ipa"

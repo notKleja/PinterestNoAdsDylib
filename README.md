@@ -35,7 +35,7 @@ visible labels, DNS rules, or renderer-specific hiding.
 | Version | 14.38 |
 | Build | 2 |
 | Bundle identifier | `pinterest` |
-| Architecture | thin arm64 |
+| Architecture | arm64; compatibility dylibs may also include arm64e |
 | Main UUID | `8DDF19C3-6AEC-33DF-ADDF-3BF468B29451` |
 | Mach-O components | 29, all `cryptid=0` |
 
@@ -103,12 +103,28 @@ creates:
 Pinterest-14.38-noads.ipa
 ```
 
+## Release gate
+
+A signed package is a **candidate**, not a verified release. Before publishing
+or calling it fixed, validate the exact IPA on the intended target:
+
+1. install it through the same route users will use;
+2. launch it and confirm the process remains alive for at least 15 seconds;
+3. capture launch syslog/dyld output, any crash report, and the
+   `[PinterestProbe] ad filter installed` log;
+4. load multiple feed pages and confirm organic content and pagination remain
+   intact; and
+5. verify promoted and sponsored models are actually removed.
+
+Host tests, `codesign`, load-command inspection, and ZIP integrity do not
+replace this runtime gate.
+
 ## Project layout
 
 ```text
 src/PinterestProbe.m             runtime filter and optional probe
 tools/macho_inject.c             thin-arm64 load-command injector
-tools/validate_macho.sh          architecture and decryption validator
+tools/validate_macho.sh          per-slice architecture/decryption validator
 package_noads.sh                 local app packaging and signing
 tests/                           host, ABI, injector, and safety tests
 scripts/check_public_tree.sh     source-tree audit
