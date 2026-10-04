@@ -10,6 +10,7 @@ allowed_paths=(
   NOTICE
   README.md
   build.sh
+  docs/r4-pinterest-working-final.png
   package_noads.sh
   scripts/check_public_tree.sh
   src/PinterestProbe.m

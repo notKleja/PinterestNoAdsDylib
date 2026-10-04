@@ -119,6 +119,21 @@ or calling it fixed, validate the exact IPA on the intended target:
 Host tests, `codesign`, load-command inspection, and ZIP integrity do not
 replace this runtime gate.
 
+## Runtime validation
+
+The corrected 14.38 build was installed through an authenticated local vPhone
+route on October 4, 2026. Pinterest became the verified foreground app, its
+first process survived the 15-second launch gate, a post-respring launch also
+rendered successfully, and the guest contained zero Pinterest crash reports.
+
+![Pinterest 14.38 running in the vPhone](docs/r4-pinterest-working-final.png)
+
+This proves installation, launch stability, and UI rendering for the tested
+package. It does not yet prove end-to-end promoted-content removal: no account
+credentials were entered, no logged-in feed or pagination was exercised, and
+the filter-installed log was not captured. Those checks remain part of the
+release gate above.
+
 ## Project layout
 
 ```text
@@ -128,6 +143,7 @@ tools/validate_macho.sh          per-slice architecture/decryption validator
 package_noads.sh                 local app packaging and signing
 tests/                           host, ABI, injector, and safety tests
 scripts/check_public_tree.sh     source-tree audit
+docs/                            non-sensitive runtime evidence
 ```
 
 ## Public-tree audit
