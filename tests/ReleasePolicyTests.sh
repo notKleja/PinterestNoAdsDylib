@@ -7,6 +7,7 @@ library="$1"
 nm -gj "$library" | grep -qx '_PIBAdFilterInstall'
 nm -gj "$library" | grep -qx '_PIBAppGroupFallbackInstall'
 nm -gj "$library" | grep -qx '_PIBProbeWriteInventory'
+nm -gj "$library" | grep -qx '_PIBSupportsBundleIdentifier'
 
 if strings -a "$library" | grep -Eq 'runtime-%@s\.json|metadata inventory'; then
   print -u2 'FAIL: release dylib contains automatic metadata-inventory behavior'

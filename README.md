@@ -19,6 +19,8 @@ The dylib hooks this Pinterest model-loading boundary:
 For each incoming batch, it:
 
 - removes models where `isPromoted` or `isSponsored` is true;
+- removes the Search Landing `slp_immersive_header` editorial hero carousel;
+- preserves `slp_search_recommendation` rows such as “Ideas for you”;
 - preserves the order and identity of every remaining model;
 - forwards the original request manager, action, and completion object;
 - keeps pagination enabled after removing items; and
@@ -75,6 +77,7 @@ The suite covers:
 
 - exact Objective-C getter and callback ABIs;
 - promoted, sponsored, organic-only, all-ad, empty, and `nil` batches;
+- Search immersive-header removal with recommendation-story preservation;
 - argument forwarding, ordering, and pagination behavior;
 - repeated, concurrent, and conflicting hook installation;
 - missing, available, and unrelated app-group container behavior;
@@ -146,10 +149,12 @@ rendered successfully, and the guest contained zero Pinterest crash reports.
 This proves installation, launch stability, and UI rendering for the tested
 package. A later physical-device capture identified and reproduced the
 re-signing app-group failure described above; the compatibility correction is
-covered by the host regression suite and a vPhone launch, but still requires a
-physical retest through the intended signing route. End-to-end promoted-content
-removal also remains unverified: no logged-in feed or pagination was exercised.
-Those checks remain part of the release gate above.
+covered by the host regression suite, a vPhone launch, and a physical free-team
+launch. Physical Search Landing verification also confirms that the immersive
+hero and its pagination dots are absent while the recommendation rows reflow
+upward without a blank gap. End-to-end promoted-content removal still requires
+broader logged-in feed and pagination coverage. Those checks remain part of the
+release gate above.
 
 ## Project layout
 

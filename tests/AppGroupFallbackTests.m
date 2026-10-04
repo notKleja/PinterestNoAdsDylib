@@ -23,6 +23,18 @@ int main(int argc, const char *argv[]) {
         require(library != NULL, "runtime filter dylib must load");
         BOOL (*installFallback)(void) =
             dlsym(library, "PIBAppGroupFallbackInstall");
+        BOOL (*supportsBundleIdentifier)(NSString *) =
+            dlsym(library, "PIBSupportsBundleIdentifier");
+        require(supportsBundleIdentifier != NULL,
+            "bundle-identifier policy entry point must exist");
+        require(supportsBundleIdentifier(@"pinterest"),
+            "original Pinterest bundle identifier must remain supported");
+        require(supportsBundleIdentifier(@"com.kleja.pinterestnoads"),
+            "free-team Pinterest bundle identifier must be supported");
+        require(!supportsBundleIdentifier(@"pinterest.WidgetExtension"),
+            "Pinterest extensions must not install the main-app filter");
+        require(!supportsBundleIdentifier(@"com.example.unrelated"),
+            "unrelated applications must remain untouched");
         require(installFallback != NULL,
             "app-group fallback install entry point must exist");
         require(installFallback(), "app-group fallback must install");

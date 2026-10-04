@@ -48,6 +48,13 @@ static void conflictingLoadHook(id self, SEL _cmd, id manager, NSArray *objects,
 - (BOOL)isSponsored { return self.sponsored; }
 @end
 
+@interface PISearchStoryFixture : NSObject
+@property(nonatomic, copy) NSString *storyType;
+@end
+
+@implementation PISearchStoryFixture
+@end
+
 static void require(BOOL condition, const char *message) {
     if (!condition) {
         fprintf(stderr, "FAIL: %s\n", message);
@@ -97,19 +104,28 @@ int main(int argc, const char *argv[]) {
         promoted.promoted = YES;
         PIAdFilterFixture *sponsored = [PIAdFilterFixture new];
         sponsored.sponsored = YES;
+        PISearchStoryFixture *searchHero = [PISearchStoryFixture new];
+        searchHero.storyType = @"slp_immersive_header";
+        PISearchStoryFixture *searchRecommendation = [PISearchStoryFixture new];
+        searchRecommendation.storyType = @"slp_search_recommendation";
         NSObject *plain = [NSObject new];
 
         id collection = [collectionClass new];
         NSObject *manager = [NSObject new];
         id completion = [^{ } copy];
-        NSArray *input = @[organic, promoted, sponsored, plain];
+        NSArray *input = @[
+            organic, promoted, sponsored, searchHero, searchRecommendation, plain
+        ];
         ((void (*)(id, SEL, id, NSArray *, NSInteger, id))objc_msgSend)(
             collection, callback, manager, input, -7, completion);
 
         require(callbackCalls == 1, "original callback must run exactly once");
-        require(receivedObjects.count == 2, "remove every classified ad object");
+        require(receivedObjects.count == 3,
+            "remove every classified ad object and the Search immersive header");
         require(receivedObjects[0] == organic, "preserve organic object order");
-        require(receivedObjects[1] == plain, "preserve unclassified object order");
+        require(receivedObjects[1] == searchRecommendation,
+            "preserve Search recommendation stories below the hero");
+        require(receivedObjects[2] == plain, "preserve unclassified object order");
         require(receivedManager == manager, "preserve the request manager argument");
         require(receivedAction == -7, "preserve the signed action argument");
         require(receivedCompletion == completion, "preserve the completion argument");
@@ -117,11 +133,12 @@ int main(int argc, const char *argv[]) {
             "keep pagination active after removing ad objects");
 
         resetCapture();
-        NSArray *organicOnly = @[organic, plain];
+        NSArray *organicOnly = @[organic, searchRecommendation, plain];
         ((void (*)(id, SEL, id, NSArray *, NSInteger, id))objc_msgSend)(
             collection, callback, manager, organicOnly, 9, completion);
-        require(receivedObjects.count == 2 && receivedObjects[0] == organic &&
-            receivedObjects[1] == plain, "preserve a page containing no ads");
+        require(receivedObjects.count == 3 && receivedObjects[0] == organic &&
+            receivedObjects[1] == searchRecommendation && receivedObjects[2] == plain,
+            "preserve a page containing no ads or immersive header");
         require(!continuesPaginationAfterRemoval,
             "do not alter pagination when no objects were removed");
 

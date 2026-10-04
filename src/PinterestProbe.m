@@ -15,6 +15,12 @@ static os_unfair_lock PIBAppGroupInstallLock = OS_UNFAIR_LOCK_INIT;
 static BOOL PIBFilterInstalled;
 static BOOL PIBAppGroupFallbackInstalled;
 
+__attribute__((visibility("default")))
+BOOL PIBSupportsBundleIdentifier(NSString *bundleIdentifier) {
+    return [bundleIdentifier isEqual:@"pinterest"] ||
+        [bundleIdentifier isEqual:@"com.kleja.pinterestnoads"];
+}
+
 static NSURL *PIBAppGroupURLUnderRoot(NSURL *root, NSString *groupIdentifier) {
     if (!root) return nil;
     return [[[root URLByAppendingPathComponent:@"PinterestNoAds" isDirectory:YES]
@@ -97,13 +103,32 @@ static BOOL PIBIsAdModel(id model) {
         PIBModelBoolean(model, @selector(isSponsored));
 }
 
+static BOOL PIBIsSearchImmersiveHeader(id model) {
+    SEL selector = NSSelectorFromString(@"storyType");
+    Method method = class_getInstanceMethod([model class], selector);
+    const char *encoding = method ? method_getTypeEncoding(method) : NULL;
+    if (!encoding || encoding[0] != '@' || ![model respondsToSelector:selector])
+        return NO;
+    id value = ((id (*)(id, SEL))objc_msgSend)(model, selector);
+    return [value isKindOfClass:NSString.class] &&
+        [value isEqual:@"slp_immersive_header"];
+}
+
 static void PIBFilteredRemoteLoad(id self, SEL selector, id manager,
                                   NSArray *objects, NSInteger action, id completion) {
     NSMutableArray *filtered = [NSMutableArray arrayWithCapacity:objects.count];
+    NSUInteger adsRemoved = 0;
+    NSUInteger searchHeroesRemoved = 0;
     for (id object in objects) {
-        if (!PIBIsAdModel(object)) [filtered addObject:object];
+        if (PIBIsAdModel(object)) {
+            adsRemoved++;
+        } else if (PIBIsSearchImmersiveHeader(object)) {
+            searchHeroesRemoved++;
+        } else {
+            [filtered addObject:object];
+        }
     }
-    NSUInteger removed = objects.count - filtered.count;
+    NSUInteger removed = adsRemoved + searchHeroesRemoved;
     if (removed > 0) {
         SEL paginationSelector =
             NSSelectorFromString(@"setContinuesPaginationAfterObjectsRemoved:");
@@ -111,8 +136,14 @@ static void PIBFilteredRemoteLoad(id self, SEL selector, id manager,
             ((void (*)(id, SEL, BOOL))objc_msgSend)(
                 self, paginationSelector, YES);
         }
-        NSLog(@"[PinterestProbe] removed %lu promoted/sponsored model(s)",
-            (unsigned long)removed);
+        if (adsRemoved > 0) {
+            NSLog(@"[PinterestProbe] removed %lu promoted/sponsored model(s)",
+                (unsigned long)adsRemoved);
+        }
+        if (searchHeroesRemoved > 0) {
+            NSLog(@"[PinterestProbe] removed %lu Search immersive header(s)",
+                (unsigned long)searchHeroesRemoved);
+        }
     }
     PIBRemoteLoadIMP original = atomic_load_explicit(
         &PIBOriginalRemoteLoad, memory_order_acquire);
@@ -251,7 +282,7 @@ BOOL PIBProbeWriteInventory(const char *outputPath) {
 __attribute__((constructor))
 static void PIBProbeStart(void) {
     @autoreleasepool {
-        if (![NSBundle.mainBundle.bundleIdentifier isEqual:@"pinterest"]) return;
+        if (!PIBSupportsBundleIdentifier(NSBundle.mainBundle.bundleIdentifier)) return;
         BOOL appGroupFallbackInstalled = PIBAppGroupFallbackInstall();
         BOOL filterInstalled = PIBAdFilterInstall();
         NSLog(@"[PinterestProbe] app-group fallback %@",
