@@ -26,9 +26,12 @@ case "${1:-ios}" in
       tests/ProbeTests.m -o build/probe-tests
     xcrun clang -fobjc-arc -Wall -Wextra -Werror -framework Foundation \
       tests/FilterTests.m -o build/filter-tests
+    xcrun clang -fobjc-arc -fblocks -Wall -Wextra -Werror -framework Foundation \
+      tests/AppGroupFallbackTests.m -o build/app-group-fallback-tests
     build/probe-tests "$PWD/build/libPinterestProbe-host.dylib"
     build/filter-tests "$PWD/build/libPinterestFilter-host.dylib"
     zsh tests/ReleasePolicyTests.sh "$PWD/build/libPinterestRelease-host.dylib"
+    build/app-group-fallback-tests "$PWD/build/libPinterestRelease-host.dylib"
     zsh tests/InjectorTests.sh
     zsh tests/PackagePreflightTests.sh
     zsh tests/PublicTreeAuditTests.sh

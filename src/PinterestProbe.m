@@ -7,9 +7,85 @@
 #include <stdatomic.h>
 
 typedef void (*PIBRemoteLoadIMP)(id, SEL, id, NSArray *, NSInteger, id);
+typedef NSURL *(*PIBAppGroupURLIMP)(id, SEL, NSString *);
 static _Atomic(PIBRemoteLoadIMP) PIBOriginalRemoteLoad;
+static _Atomic(PIBAppGroupURLIMP) PIBOriginalAppGroupURL;
 static os_unfair_lock PIBInstallLock = OS_UNFAIR_LOCK_INIT;
+static os_unfair_lock PIBAppGroupInstallLock = OS_UNFAIR_LOCK_INIT;
 static BOOL PIBFilterInstalled;
+static BOOL PIBAppGroupFallbackInstalled;
+
+static NSURL *PIBAppGroupURLUnderRoot(NSURL *root, NSString *groupIdentifier) {
+    if (!root) return nil;
+    return [[[root URLByAppendingPathComponent:@"PinterestNoAds" isDirectory:YES]
+        URLByAppendingPathComponent:@"AppGroup" isDirectory:YES]
+        URLByAppendingPathComponent:groupIdentifier isDirectory:YES];
+}
+
+static NSURL *PIBContainerURLForAppGroup(id self, SEL selector,
+                                         NSString *groupIdentifier) {
+    PIBAppGroupURLIMP original = atomic_load_explicit(
+        &PIBOriginalAppGroupURL, memory_order_acquire);
+    NSURL *result = original(self, selector, groupIdentifier);
+    if (result || ![groupIdentifier isEqualToString:@"group.pinterest"])
+        return result;
+
+    NSFileManager *manager = self;
+    NSURL *applicationSupport = [manager URLsForDirectory:NSApplicationSupportDirectory
+        inDomains:NSUserDomainMask].firstObject;
+    if (!applicationSupport) {
+        NSString *home = NSHomeDirectory();
+        if (home.length == 0) return nil;
+        applicationSupport = [NSURL fileURLWithPath:
+            [home stringByAppendingPathComponent:@"Library/Application Support"]
+            isDirectory:YES];
+    }
+    NSURL *fallback = PIBAppGroupURLUnderRoot(applicationSupport, groupIdentifier);
+    NSError *applicationSupportError = nil;
+    if (![manager createDirectoryAtURL:fallback withIntermediateDirectories:YES
+        attributes:nil error:&applicationSupportError]) {
+        NSString *temporaryPath = NSTemporaryDirectory();
+        NSURL *temporaryRoot = temporaryPath.length > 0 ?
+            [NSURL fileURLWithPath:temporaryPath isDirectory:YES] : nil;
+        fallback = PIBAppGroupURLUnderRoot(temporaryRoot, groupIdentifier);
+        NSError *temporaryError = nil;
+        if (!fallback || ![manager createDirectoryAtURL:fallback
+            withIntermediateDirectories:YES attributes:nil error:&temporaryError]) {
+            NSLog(@"[PinterestProbe] app-group fallback unavailable: %@; %@",
+                applicationSupportError, temporaryError);
+            return nil;
+        }
+    }
+    NSLog(@"[PinterestProbe] using app-group fallback for %@", groupIdentifier);
+    return fallback;
+}
+
+__attribute__((visibility("default")))
+BOOL PIBAppGroupFallbackInstall(void) {
+    os_unfair_lock_lock(&PIBAppGroupInstallLock);
+    SEL selector = @selector(containerURLForSecurityApplicationGroupIdentifier:);
+    Method method = class_getInstanceMethod(NSFileManager.class, selector);
+    if (!method) {
+        os_unfair_lock_unlock(&PIBAppGroupInstallLock);
+        return NO;
+    }
+    IMP current = method_getImplementation(method);
+    if (current == (IMP)PIBContainerURLForAppGroup) {
+        PIBAppGroupFallbackInstalled = YES;
+        os_unfair_lock_unlock(&PIBAppGroupInstallLock);
+        return YES;
+    }
+    if (PIBAppGroupFallbackInstalled) {
+        os_unfair_lock_unlock(&PIBAppGroupInstallLock);
+        return NO;
+    }
+    atomic_store_explicit(&PIBOriginalAppGroupURL,
+        (PIBAppGroupURLIMP)current, memory_order_release);
+    method_setImplementation(method, (IMP)PIBContainerURLForAppGroup);
+    PIBAppGroupFallbackInstalled = YES;
+    os_unfair_lock_unlock(&PIBAppGroupInstallLock);
+    return YES;
+}
 
 static BOOL PIBModelBoolean(id model, SEL selector) {
     if (![model respondsToSelector:selector]) return NO;
@@ -176,7 +252,10 @@ __attribute__((constructor))
 static void PIBProbeStart(void) {
     @autoreleasepool {
         if (![NSBundle.mainBundle.bundleIdentifier isEqual:@"pinterest"]) return;
+        BOOL appGroupFallbackInstalled = PIBAppGroupFallbackInstall();
         BOOL filterInstalled = PIBAdFilterInstall();
+        NSLog(@"[PinterestProbe] app-group fallback %@",
+            appGroupFallbackInstalled ? @"installed" : @"unavailable");
         NSLog(@"[PinterestProbe] ad filter %@",
             filterInstalled ? @"installed" : @"unavailable");
 #ifdef PIB_ENABLE_METADATA_AUTOSTART

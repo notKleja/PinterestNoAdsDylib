@@ -14,6 +14,7 @@ allowed_paths=(
   package_noads.sh
   scripts/check_public_tree.sh
   src/PinterestProbe.m
+  tests/AppGroupFallbackTests.m
   tests/FilterTests.m
   tests/InjectorFixtureMutator.c
   tests/InjectorTests.sh

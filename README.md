@@ -27,6 +27,20 @@ For each incoming batch, it:
 The filter works at the model layer. It does not rely on advertiser names,
 visible labels, DNS rules, or renderer-specific hiding.
 
+## Re-signed app-group compatibility
+
+Pinterest's experiments cache expects its production `group.pinterest`
+container. A differently signed installation may retain that entitlement while
+iOS refuses the original production group, returning no container URL and
+causing Pinterest 14.38 to abort during startup.
+
+The release dylib installs a narrow compatibility hook before the ad filter. It
+preserves a real app-group URL when iOS provides one. Only a missing
+`group.pinterest` URL receives an isolated writable directory inside the app's
+own container; unrelated app groups keep the system behavior. This fixes the
+observed nil-path startup failure without granting or emulating access to
+Pinterest's production shared container.
+
 ## Supported build
 
 | Property | Required value |
@@ -63,6 +77,7 @@ The suite covers:
 - promoted, sponsored, organic-only, all-ad, empty, and `nil` batches;
 - argument forwarding, ordering, and pagination behavior;
 - repeated, concurrent, and conflicting hook installation;
+- missing, available, and unrelated app-group container behavior;
 - filter-only release behavior;
 - idempotent load-command injection with unchanged `__text`;
 - malformed, universal, encrypted, wrong-architecture, and no-padding Mach-O
@@ -129,10 +144,12 @@ rendered successfully, and the guest contained zero Pinterest crash reports.
 ![Pinterest 14.38 running in the vPhone](docs/r4-pinterest-working-final.png)
 
 This proves installation, launch stability, and UI rendering for the tested
-package. It does not yet prove end-to-end promoted-content removal: no account
-credentials were entered, no logged-in feed or pagination was exercised, and
-the filter-installed log was not captured. Those checks remain part of the
-release gate above.
+package. A later physical-device capture identified and reproduced the
+re-signing app-group failure described above; the compatibility correction is
+covered by the host regression suite and a vPhone launch, but still requires a
+physical retest through the intended signing route. End-to-end promoted-content
+removal also remains unverified: no logged-in feed or pagination was exercised.
+Those checks remain part of the release gate above.
 
 ## Project layout
 

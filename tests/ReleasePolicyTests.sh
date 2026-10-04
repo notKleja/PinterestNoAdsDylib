@@ -5,6 +5,7 @@ set -euo pipefail
 library="$1"
 
 nm -gj "$library" | grep -qx '_PIBAdFilterInstall'
+nm -gj "$library" | grep -qx '_PIBAppGroupFallbackInstall'
 nm -gj "$library" | grep -qx '_PIBProbeWriteInventory'
 
 if strings -a "$library" | grep -Eq 'runtime-%@s\.json|metadata inventory'; then
@@ -12,4 +13,4 @@ if strings -a "$library" | grep -Eq 'runtime-%@s\.json|metadata inventory'; then
   exit 1
 fi
 
-print 'PASS: release dylib autostarts only the ad filter'
+print 'PASS: release dylib autostarts filter and app-group compatibility only'
